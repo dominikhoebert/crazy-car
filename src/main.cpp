@@ -4,7 +4,7 @@ Speeds: 1500 ... 2000 Forward
         1480 Brake
 
 Steering: 90 ... 50 left
-          90 ... 140 right
+          90 ... 130 right
 
 Sensor: 20 (far) ... 500 (close)
 
@@ -13,15 +13,19 @@ Sensor: 20 (far) ... 500 (close)
 // Variables
 
 #define TARGET_DISTANCE 200
-#define SPEED 1700
+#define SPEED 1800
 #define MOTOR_SETUP 0
 
 // Steering tuning (simple proportional control based on LEFT sensor only)
 #define STEERING_NEUTRAL_DEG 90
 #define STEERING_MIN_DEG 50
-#define STEERING_MAX_DEG 140
+#define STEERING_MAX_DEG 130
 #define STEERING_DEADBAND 10
 #define STEERING_KP_DIV 6
+
+// Simple obstacle handling: if middle sensor sees close obstacle, force right turn
+#define MIDDLE_OBSTACLE_THRESHOLD 200
+#define MIDDLE_OBSTACLE_STEER_DEG STEERING_MAX_DEG
 
 #include <Arduino.h>
 /***********************************************************************
@@ -126,12 +130,16 @@ void loop()
     int rightDistance = analogRead(RIGTHSENSOR);
     int vBat = analogRead(VBAT);
 
+    (void)rightDistance;
+    (void)vBat;
+
     // Now check the Button and run control strategies
 
     if (digitalRead(STOPBUTTON) == LOW)
     {
         runMode = 0;                        // stopen des Fahrzeugs
         speedServo.writeMicroseconds(1480); // set into Brake mode
+        steeringServo.write(90);            // set steering to neutral
     }
     else
     {
@@ -144,11 +152,23 @@ void loop()
         // Geschwindigkeit
         speedServo.writeMicroseconds(SPEED);
 
-        const int steeringDeg = calcSteeringDegFromLeft(leftDistance);
+        int steeringDeg;
+        if (middleDistance >= MIDDLE_OBSTACLE_THRESHOLD)
+        {
+            steeringDeg = MIDDLE_OBSTACLE_STEER_DEG;
+        }
+        else
+        {
+            steeringDeg = calcSteeringDegFromLeft(leftDistance);
+        }
+
+        steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
         steeringServo.write(steeringDeg);
 
         Serial.print("Left: ");
         Serial.print(leftDistance);
+        Serial.print(" Middle: ");
+        Serial.print(middleDistance);
         Serial.print(" SteeringDeg: ");
         Serial.println(steeringDeg);
     }
