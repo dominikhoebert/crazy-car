@@ -6,6 +6,8 @@ Speeds: 1500 ... 2000 Forward
 Steering: 90 ... 50 left
           90 ... 140 right
 
+Sensor: 20 (far) ... 500 (close)
+
 */
 
 // Variables
@@ -13,6 +15,13 @@ Steering: 90 ... 50 left
 #define TARGET_DISTANCE 200
 #define SPEED 1700
 #define MOTOR_SETUP 0
+
+// Steering tuning (simple proportional control based on LEFT sensor only)
+#define STEERING_NEUTRAL_DEG 90
+#define STEERING_MIN_DEG 50
+#define STEERING_MAX_DEG 140
+#define STEERING_DEADBAND 10
+#define STEERING_KP_DIV 6
 
 #include <Arduino.h>
 /***********************************************************************
@@ -69,6 +78,17 @@ Servo speedServo;    // speedServo
  **************************************************************************/
 unsigned char runMode = 0; // Variable = 0 ... stop
 
+static int calcSteeringDegFromLeft(int leftDistance)
+{
+    const int error = leftDistance - TARGET_DISTANCE;
+    if (abs(error) <= STEERING_DEADBAND)
+        return STEERING_NEUTRAL_DEG;
+
+    int offset = error / STEERING_KP_DIV; // closer to wall (bigger value) => steer more to the right
+    int steeringDeg = STEERING_NEUTRAL_DEG + offset;
+    return constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
+}
+
 void setupESCPWM()
 {
     const int CONFIG_DELAY = 5000;     // Zeit wie lange das Konfig Signal anliegt
@@ -123,27 +143,13 @@ void loop()
     {
         // Geschwindigkeit
         speedServo.writeMicroseconds(SPEED);
+
+        const int steeringDeg = calcSteeringDegFromLeft(leftDistance);
+        steeringServo.write(steeringDeg);
+
         Serial.print("Left: ");
         Serial.print(leftDistance);
-        Serial.print(" Middle: ");
-        Serial.print(middleDistance);
-        Serial.print(" Right: ");
-        Serial.print(rightDistance);
-
-        if (leftDistance < TARGET_DISTANCE - 20)
-        {
-            Serial.println(" Steering: left");
-            steeringServo.write(90 - 20);
-        }
-        else if (leftDistance > TARGET_DISTANCE + 20)
-        {
-            Serial.println(" Steering: right");
-            steeringServo.write(90 + 20);
-        }
-        else
-        {
-            Serial.println(" Steering: middle");
-            steeringServo.write(90);
-        }
+        Serial.print(" SteeringDeg: ");
+        Serial.println(steeringDeg);
     }
 }
