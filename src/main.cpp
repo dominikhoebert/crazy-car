@@ -1,7 +1,18 @@
+/*
+Speeds: 1500 ... 2000 Forward
+        1000 ... 500 Reverse
+        1480 Brake
+
+Steering: 90 ... 50 left
+          90 ... 140 right
+
+*/
+
 // Variables
 
 #define TARGET_DISTANCE 200
-#define SPEED 1600
+#define SPEED 1700
+#define MOTOR_SETUP 0
 
 #include <Arduino.h>
 /***********************************************************************
@@ -80,7 +91,8 @@ void setup()
     steeringServo.attach(PIN_STEERING_SERVO);
     steeringServo.write(90); // Set it to neutral position
     speedServo.attach(PIN_SPEED_SERVO);
-    setupESCPWM();
+    if (MOTOR_SETUP == 1)
+        setupESCPWM();
     Serial.begin(9600);
     Serial.println("Setup done");
 }
@@ -97,7 +109,10 @@ void loop()
     // Now check the Button and run control strategies
 
     if (digitalRead(STOPBUTTON) == LOW)
-        runMode = 0; // stopen des Fahrzeugs
+    {
+        runMode = 0;                        // stopen des Fahrzeugs
+        speedServo.writeMicroseconds(1480); // set into Brake mode
+    }
     else
     {
         if (digitalRead(STARTBUTTON) == LOW)
@@ -107,17 +122,28 @@ void loop()
     if (runMode == 1)
     {
         // Geschwindigkeit
-        speedServo.writeMicroseconds(SPEED); // lowspeed ahead
-
-        // Lenkung (Steering)
-        int lenkung = ((long)(leftDistance - middleDistance)) * 90 / 1024;
-        Serial.print("left: ");
+        speedServo.writeMicroseconds(SPEED);
+        Serial.print("Left: ");
         Serial.print(leftDistance);
-        Serial.print(" middle: ");
+        Serial.print(" Middle: ");
         Serial.print(middleDistance);
-        Serial.print(" lenkung: ");
-        Serial.println(lenkung);
+        Serial.print(" Right: ");
+        Serial.print(rightDistance);
 
-        steeringServo.write(lenkung + 90);
+        if (leftDistance < TARGET_DISTANCE - 20)
+        {
+            Serial.println(" Steering: left");
+            steeringServo.write(90 - 20);
+        }
+        else if (leftDistance > TARGET_DISTANCE + 20)
+        {
+            Serial.println(" Steering: right");
+            steeringServo.write(90 + 20);
+        }
+        else
+        {
+            Serial.println(" Steering: middle");
+            steeringServo.write(90);
+        }
     }
 }
