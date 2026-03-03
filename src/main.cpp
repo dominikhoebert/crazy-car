@@ -19,7 +19,7 @@ Sensor: 20 (far) ... 400 (close)
 // Speed tuning (ESC in microseconds)
 #define SPEED_NEUTRAL_US 1500
 #define SPEED_BRAKE_US 1480
-#define SPEED_MIN_US 1600
+#define SPEED_MIN_US 1680
 #define SPEED_MAX_US 1800
 
 // Simple distance-hold PID using middle sensor (error = TARGET_DISTANCE - middle)
@@ -58,7 +58,7 @@ Sensor: 20 (far) ... 400 (close)
 #define WALL_HIT_THRESHOLD 400
 #define WALL_HIT_CONFIRM_COUNT 3
 #define RUNMODE2_REVERSE_US 800
-#define RUNMODE2_REVERSE_MS 600
+#define RUNMODE2_REVERSE_MS 400
 #define RUNMODE2_FORWARD_US SPEED
 #define RUNMODE2_FORWARD_MS 700
 
@@ -124,6 +124,22 @@ enum TrackSegment : uint8_t
     SEG_RIGHT_CURVE,
     SEG_STRAIGHT,
 };
+
+static const char *trackSegmentToString(TrackSegment seg)
+{
+    switch (seg)
+    {
+    case SEG_LEFT_CURVE:
+        return "LEFT";
+    case SEG_RIGHT_CURVE:
+        return "RIGHT";
+    case SEG_STRAIGHT:
+        return "STRAIGHT";
+    case SEG_UNKNOWN:
+    default:
+        return "UNKNOWN";
+    }
+}
 
 static TrackSegment updateTrackSegment(int leftDistance, int rightDistance, bool enabled)
 {
@@ -415,7 +431,7 @@ void loop()
         Serial.print("\tRight: ");
         Serial.print(rightDistance);
         Serial.print("\tSeg: ");
-        Serial.print((int)seg);
+        Serial.print(trackSegmentToString(seg));
         Serial.print("\tSpeedUs: ");
         Serial.print(speedUs);
         Serial.print("\tSteeringDeg: ");
