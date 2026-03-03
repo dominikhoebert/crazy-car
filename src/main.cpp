@@ -364,7 +364,7 @@ void loop()
 
         lastSteeringDeg = steeringDeg;
 
-        // Detect wall hit -> switch to RunMode 2
+        // Detect wall hit -> switch to Reverse Mode
         if (middleDistance >= WALL_HIT_THRESHOLD)
         {
             if (wallHitCount < 255)
@@ -379,7 +379,13 @@ void loop()
         {
             wallHitCount = 0;
 
-            const bool wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
+            bool wasTurningRight;
+            if (seg == SEG_RIGHT_CURVE)
+                wasTurningRight = true;
+            else if (seg == SEG_LEFT_CURVE)
+                wasTurningRight = false;
+            else
+                wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
             const int steerSameDeg = wasTurningRight ? STEERING_MAX_DEG : STEERING_MIN_DEG;
             const int steerOppDeg = wasTurningRight ? STEERING_MIN_DEG : STEERING_MAX_DEG;
 
