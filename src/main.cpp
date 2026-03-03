@@ -48,6 +48,12 @@ Sensor: 20 (far) ... 400 (close)
 // 0.0f => center, 0.30f => right sensor can be ~30% "closer" (higher ADC) than left.
 #define REGLER_LR_RIGHT_BIAS_FRAC 0.30f
 
+// Simple segment recognition (left curve / right curve / straight)
+#define SEG_JUMP_THRESHOLD 80
+#define SEG_SIMILAR_THRESHOLD 25
+#define SEG_NEAR_THRESHOLD 220
+#define SEG_CONFIRM_COUNT 3
+
 // RunMode 2: recovery when "in the wall"
 #define WALL_HIT_THRESHOLD 400
 #define WALL_HIT_CONFIRM_COUNT 3
@@ -110,6 +116,86 @@ Servo speedServo;    // speedServo
  * Global Variablen
  **************************************************************************/
 unsigned char runMode = 0; // Variable = 0 ... stop
+
+enum TrackSegment : uint8_t
+{
+    SEG_UNKNOWN = 0,
+    SEG_LEFT_CURVE,
+    SEG_RIGHT_CURVE,
+    SEG_STRAIGHT,
+};
+
+static TrackSegment updateTrackSegment(int leftDistance, int rightDistance, bool enabled)
+{
+    static bool initialized = false;
+    static int lastLeft = 0;
+    static int lastRight = 0;
+    static uint8_t leftJumpCount = 0;
+    static uint8_t rightJumpCount = 0;
+    static uint8_t straightCount = 0;
+    static TrackSegment segment = SEG_UNKNOWN;
+
+    if (!enabled)
+    {
+        initialized = false;
+        leftJumpCount = 0;
+        rightJumpCount = 0;
+        straightCount = 0;
+        segment = SEG_UNKNOWN;
+        return segment;
+    }
+
+    if (!initialized)
+    {
+        lastLeft = leftDistance;
+        lastRight = rightDistance;
+        initialized = true;
+        segment = SEG_UNKNOWN;
+        return segment;
+    }
+
+    const int dLeft = leftDistance - lastLeft;
+    const int dRight = rightDistance - lastRight;
+
+    // Curve detection by sudden "near" jumps on left or right.
+    if (dLeft >= SEG_JUMP_THRESHOLD)
+        leftJumpCount++;
+    else
+        leftJumpCount = 0;
+
+    if (dRight >= SEG_JUMP_THRESHOLD)
+        rightJumpCount++;
+    else
+        rightJumpCount = 0;
+
+    // Straight detection: left/right similar again AND both are near enough.
+    const bool isSimilar = abs(leftDistance - rightDistance) <= SEG_SIMILAR_THRESHOLD;
+    const bool isNear = (leftDistance >= SEG_NEAR_THRESHOLD) && (rightDistance >= SEG_NEAR_THRESHOLD);
+    if (isSimilar && isNear)
+        straightCount++;
+    else
+        straightCount = 0;
+
+    if (leftJumpCount >= SEG_CONFIRM_COUNT)
+    {
+        segment = SEG_LEFT_CURVE;
+        leftJumpCount = rightJumpCount = straightCount = 0;
+    }
+    else if (rightJumpCount >= SEG_CONFIRM_COUNT)
+    {
+        segment = SEG_RIGHT_CURVE;
+        leftJumpCount = rightJumpCount = straightCount = 0;
+    }
+    else if (straightCount >= SEG_CONFIRM_COUNT)
+    {
+        segment = SEG_STRAIGHT;
+        leftJumpCount = rightJumpCount = straightCount = 0;
+    }
+
+    lastLeft = leftDistance;
+    lastRight = rightDistance;
+    return segment;
+}
 
 static int calcSteeringDegFromLeftRightPID(int leftDistance, int rightDistance, bool enabled)
 {
@@ -263,6 +349,8 @@ void loop()
 
     if (runMode == 1)
     {
+        const TrackSegment seg = updateTrackSegment(leftDistance, rightDistance, true);
+
         // Geschwindigkeit
         const int speedUs = calcSpeedUsFromMiddlePID(middleDistance, GESCHWINDIGKEITSREGELUNG == 1);
         speedServo.writeMicroseconds(speedUs);
@@ -320,6 +408,8 @@ void loop()
         Serial.print(middleDistance);
         Serial.print("\tRight: ");
         Serial.print(rightDistance);
+        Serial.print("\tSeg: ");
+        Serial.print((int)seg);
         Serial.print("\tSpeedUs: ");
         Serial.print(speedUs);
         Serial.print("\tSteeringDeg: ");
@@ -330,5 +420,6 @@ void loop()
         // reset PID state when not driving, so next start begins centered
         (void)calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
         (void)calcSpeedUsFromMiddlePID(middleDistance, false);
+        (void)updateTrackSegment(leftDistance, rightDistance, false);
     }
 }
