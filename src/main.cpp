@@ -19,7 +19,7 @@ Sensor: 20 (far) ... 400 (close)
 // Speed tuning (ESC in microseconds)
 #define SPEED_NEUTRAL_US 1500
 #define SPEED_BRAKE_US 1480
-#define SPEED_MIN_US 1550
+#define SPEED_MIN_US 1600
 #define SPEED_MAX_US 1800
 
 // Simple distance-hold PID using middle sensor (error = TARGET_DISTANCE - middle)
@@ -42,10 +42,6 @@ Sensor: 20 (far) ... 400 (close)
 #define REGLER_LR_I 0.01f
 #define REGLER_LR_D 0.15f
 #define REGLER_LR_DEADBAND 5
-
-// Simple obstacle handling: if middle sensor sees close obstacle, force right turn
-#define MIDDLE_OBSTACLE_THRESHOLD 200
-#define MIDDLE_OBSTACLE_STEER_DEG STEERING_MAX_DEG
 
 // RunMode 2: recovery when "in the wall"
 #define WALL_HIT_THRESHOLD 400
@@ -262,14 +258,8 @@ void loop()
         speedServo.writeMicroseconds(speedUs);
 
         int steeringDeg;
-        if (middleDistance >= MIDDLE_OBSTACLE_THRESHOLD)
-        {
-            steeringDeg = MIDDLE_OBSTACLE_STEER_DEG;
-        }
-        else
-        {
-            steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
-        }
+
+        steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
 
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
         steeringServo.write(steeringDeg);
@@ -299,6 +289,8 @@ void loop()
             steeringServo.write(steerSameDeg);
             speedServo.writeMicroseconds(RUNMODE2_REVERSE_US);
             delay(RUNMODE2_REVERSE_MS);
+            speedServo.writeMicroseconds(SPEED_BRAKE_US);
+            delay(200);
 
             // Forward, full lock opposite direction
             steeringServo.write(steerOppDeg);
