@@ -70,7 +70,7 @@ Servo speedServo;  // speedServo
 
 int main()
 {
-	unsigned char runMode = 0; //Variable = 0 ... stop
+	unsigned char state = STATE_INIT; //Variable = 0 ... stop
 
 	int leftDistance, middleDistance, rightDistance;
 
