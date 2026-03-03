@@ -4,7 +4,13 @@
 #define PIN_SPEED_SERVO 2
 
 #define STATE_INIT 0
+#define STATE_NICHT_GESTARTET 5
 #define STATE_GESTARTET 10
+#define STATE_STOPPED 13
+#define STATE_BLITZ_START 15
+#define STATE_REGELUNG 20
+#define STATE_LEFT_CURVE 30
+#define STATE_RIGHT_CURVE 40
 
 /*
 Speeds: 1500 ... 2000 Forward
@@ -20,6 +26,8 @@ Sensor: 20 (far) ... 500 (close)
 
 #define TARGET_DISTANCE 200
 #define SPEED 1800
+#define SPEED_STOPPED 1480
+#define SPEED_FULL 2000
 #define MOTOR_SETUP 0
 
 // Steering tuning
@@ -73,42 +81,53 @@ int main()
 	unsigned char state = STATE_INIT; //Variable = 0 ... stop
 
 	int leftDistance, middleDistance, rightDistance;
+	int startTime;
 
-
-	init();
-
-    // attach Servo objects to the corresponding PINs
-    steeringServo.attach(PIN_STEERING_SERVO);
-    steeringServo.write(90); // Set it to neutral position
-    speedServo.attach(PIN_SPEED_SERVO);
-    if (MOTOR_SETUP == 1)
-        setupESCPWM();
-    Serial.begin(9600);
-    Serial.println("Setup done");
 
 	while(1)
 	{
-			//First get all data
-		leftDistance = analogRead(LEFTSENSOR);
-		middleDistance = analogRead(MIDDLESENSOR);
-		rightDistance = analogRead(RIGTHSENSOR);
-
 		if (digitalRead(STOPBUTTON) == LOW)
-		{
-			runMode = 0;                        // stopen des Fahrzeugs
-			speedServo.writeMicroseconds(1480); // set into Brake mode
-			steeringServo.write(90);            // set steering to neutral
-		}
-		else
-		{
-			if (digitalRead(STARTBUTTON) == LOW)
-				runMode = 1; // fahrzeug darf fahren
-		}
+			state = STATE_STOPPED;
 
-		if (runMode == 1)
+		switch(state)
 		{
-			// Geschwindigkeit
-			speedServo.writeMicroseconds(SPEED);
+		case STATE_INIT:
+			init();
+
+			// attach Servo objects to the corresponding PINs
+			steeringServo.attach(PIN_STEERING_SERVO);
+			steeringServo.write(90); // Set it to neutral position
+			speedServo.attach(PIN_SPEED_SERVO);
+			calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
+			if (MOTOR_SETUP == 1)
+				setupESCPWM();
+			Serial.begin(9600);
+			Serial.println("Setup done");
+			state = STATE_NICHT_GESTARTET;
+			break;
+		case STATE_NICHT_GESTARTET:
+			if (digitalRead(STARTBUTTON) == LOW)
+			{
+				startTime = millis();
+				state = STATE_GESTARTET;
+			}
+			
+			break;
+		case STATE_GESTARTET:
+			speedServo.writeMicroseconds(SPEED_FULL);
+
+			if(millis() - startTime > 1000)
+			{
+				speedServo.writeMicroseconds(SPEED);
+				state = STATE_REGELUNG;
+			}
+
+			break;
+
+		case STATE_REGELUNG:
+			leftDistance = analogRead(LEFTSENSOR);
+			middleDistance = analogRead(MIDDLESENSOR);
+			rightDistance = analogRead(RIGTHSENSOR);
 
 			int steeringDeg;
 			if (middleDistance >= MIDDLE_OBSTACLE_THRESHOLD)
@@ -123,7 +142,7 @@ int main()
 			steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
 			steeringServo.write(steeringDeg);
 
-			Serial.print("Left: ");
+			/*Serial.print("Left: ");
 			Serial.print(leftDistance);
 			Serial.print(" Middle: ");
 			Serial.print(middleDistance);
@@ -131,13 +150,22 @@ int main()
 			Serial.print(rightDistance);
 			Serial.print(" SteeringDeg: ");
 			Serial.println(steeringDeg);
-		}
-		else
-		{
-			// reset PID state when not driving, so next start begins centered
-			(void)calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
+			*/
+
+		case STATE_STOPPED:
+			// stopen des Fahrzeugs
+			speedServo.writeMicroseconds(SPEED_STOPPED); // set into Brake mode
+			steeringServo.write(STEERING_NEUTRAL_DEG);            // set steering to neutral
+			calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
+			break;
 		}
 
+
+
+		if (runMode == 1)
+		{
+			// Geschwindigkeit
+			
 	}
 
 	return 0;
