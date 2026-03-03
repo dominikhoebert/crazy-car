@@ -6,7 +6,7 @@ Speeds: 1500 ... 2000 Forward
 Steering: 90 ... 50 left
           90 ... 130 right
 
-Sensor: 20 (far) ... 500 (close)
+Sensor: 20 (far) ... 400 (close)
 
 */
 
@@ -19,7 +19,7 @@ Sensor: 20 (far) ... 500 (close)
 // Speed tuning (ESC in microseconds)
 #define SPEED_NEUTRAL_US 1500
 #define SPEED_BRAKE_US 1480
-#define SPEED_MIN_US SPEED_BRAKE_US
+#define SPEED_MIN_US 1550
 #define SPEED_MAX_US 1800
 
 // Simple distance-hold PID using middle sensor (error = TARGET_DISTANCE - middle)
@@ -46,6 +46,14 @@ Sensor: 20 (far) ... 500 (close)
 // Simple obstacle handling: if middle sensor sees close obstacle, force right turn
 #define MIDDLE_OBSTACLE_THRESHOLD 200
 #define MIDDLE_OBSTACLE_STEER_DEG STEERING_MAX_DEG
+
+// RunMode 2: recovery when "in the wall"
+#define WALL_HIT_THRESHOLD 400
+#define WALL_HIT_CONFIRM_COUNT 3
+#define RUNMODE2_REVERSE_US 800
+#define RUNMODE2_REVERSE_MS 600
+#define RUNMODE2_FORWARD_US SPEED
+#define RUNMODE2_FORWARD_MS 700
 
 #include <Arduino.h>
 /***********************************************************************
@@ -232,13 +240,20 @@ void loop()
     {
         runMode = 0;                                  // stopen des Fahrzeugs
         speedServo.writeMicroseconds(SPEED_BRAKE_US); // set into Brake mode
-        steeringServo.write(90);                      // set steering to neutral
+        steeringServo.write(STEERING_NEUTRAL_DEG);    // set steering to neutral
     }
     else
     {
         if (digitalRead(STARTBUTTON) == LOW)
             runMode = 1; // fahrzeug darf fahren
     }
+
+    // RunMode 2: wall recovery (simple blocking sequence)
+    static uint8_t wallHitCount = 0;
+    static int lastSteeringDeg = STEERING_NEUTRAL_DEG;
+
+    if (runMode == 0)
+        wallHitCount = 0;
 
     if (runMode == 1)
     {
@@ -258,6 +273,44 @@ void loop()
 
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
         steeringServo.write(steeringDeg);
+
+        lastSteeringDeg = steeringDeg;
+
+        // Detect wall hit -> switch to RunMode 2
+        if (middleDistance >= WALL_HIT_THRESHOLD)
+        {
+            if (wallHitCount < 255)
+                wallHitCount++;
+        }
+        else
+        {
+            wallHitCount = 0;
+        }
+
+        if (wallHitCount >= WALL_HIT_CONFIRM_COUNT)
+        {
+            wallHitCount = 0;
+
+            const bool wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
+            const int steerSameDeg = wasTurningRight ? STEERING_MAX_DEG : STEERING_MIN_DEG;
+            const int steerOppDeg = wasTurningRight ? STEERING_MIN_DEG : STEERING_MAX_DEG;
+
+            // Reverse, full lock same direction
+            steeringServo.write(steerSameDeg);
+            speedServo.writeMicroseconds(RUNMODE2_REVERSE_US);
+            delay(RUNMODE2_REVERSE_MS);
+
+            // Forward, full lock opposite direction
+            steeringServo.write(steerOppDeg);
+            speedServo.writeMicroseconds(RUNMODE2_FORWARD_US);
+            delay(RUNMODE2_FORWARD_MS);
+
+            // Back to normal mode, reset PIDs so they don't "jump"
+            speedServo.writeMicroseconds(SPEED_BRAKE_US);
+            steeringServo.write(STEERING_NEUTRAL_DEG);
+            (void)calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
+            (void)calcSpeedUsFromMiddlePID(middleDistance, false);
+        }
 
         Serial.print("\tLeft: ");
         Serial.print(leftDistance);

@@ -91,10 +91,10 @@ Hinweis: Kommentare können vom tatsächlichen `#define` abweichen – **Quelle 
 - Wenn Servos/ESC nicht reagieren: Prüfe GND-Gemeinschaft, Pinbelegung, und ob der ESC ein neutrales Signal (typ. ~1500 µs) erwartet.
 - Bei unerwarteter Bewegung: `MOTOR_SETUP` muss **0** sein, und `SPEED` sollte konservativ gewählt werden.
 
-
 ## TODO
 
 - [x] Mittig Fahren
 - [x] Batteriespannung messen und ausgeben
 - [x] PID Speed
+- [x] reverse
 - [ ] State Machine (stop/schnellstart/regel/kurve-links/kurve-rechts)
