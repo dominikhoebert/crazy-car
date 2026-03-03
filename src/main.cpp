@@ -43,6 +43,11 @@ Sensor: 20 (far) ... 400 (close)
 #define REGLER_LR_D 0.15f
 #define REGLER_LR_DEADBAND 5
 
+// Track offset: drive ~30% to the right instead of centered.
+// Implemented as a bias on the left-right difference setpoint.
+// 0.0f => center, 0.30f => right sensor can be ~30% "closer" (higher ADC) than left.
+#define REGLER_LR_RIGHT_BIAS_FRAC 0.30f
+
 // RunMode 2: recovery when "in the wall"
 #define WALL_HIT_THRESHOLD 400
 #define WALL_HIT_CONFIRM_COUNT 3
@@ -125,7 +130,12 @@ static int calcSteeringDegFromLeftRightPID(int leftDistance, int rightDistance, 
 
     err_2 = err_1;
     err_1 = err_0;
-    err_0 = (float)(leftDistance - rightDistance); // setpoint is 0 => centered
+
+    // Bias the setpoint so we drive more to the right.
+    // desiredDiff is negative when we want rightDistance > leftDistance.
+    const float avgLR = 0.5f * (float)(leftDistance + rightDistance);
+    const float desiredDiff = -REGLER_LR_RIGHT_BIAS_FRAC * avgLR;
+    err_0 = (float)(leftDistance - rightDistance) - desiredDiff;
 
     if (fabsf(err_0) < (float)REGLER_LR_DEADBAND)
         err_0 = 0.0f;
