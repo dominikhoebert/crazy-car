@@ -25,9 +25,10 @@ Sensor: 20 (far) ... 500 (close)
 */
 
 #define TARGET_DISTANCE 200
-#define SPEED 1800
+#define SPEED 1900
 #define SPEED_STOPPED 1480
-#define SPEED_FULL 2000
+#define SPEED_FULL 2200
+#define SPEED_CURVE 1800
 #define MOTOR_SETUP 0
 
 // Steering tuning
@@ -52,8 +53,11 @@ Sensor: 20 (far) ... 500 (close)
 
 #define LEFTSENSOR A1
 #define MIDDLESENSOR A3
-#define RIGTHSENSOR A2
+#define RIGHTSENSOR A2
 #define VBAT A0
+
+#define DIFFERENCE_DETECTION_CURVE 30
+#define DISTANCE_DETECTION_END_OF_CURVE 200
 
 /*************************************************************************/
 
@@ -81,28 +85,31 @@ int main()
 	unsigned char state = STATE_INIT; //Variable = 0 ... stop
 
 	int leftDistance, middleDistance, rightDistance;
+	int old_leftDistance, old_rightDistance;
 	int startTime;
+	
+	init();
 
+	Serial.begin(9600);
 
 	while(1)
 	{
 		if (digitalRead(STOPBUTTON) == LOW)
 			state = STATE_STOPPED;
 
+		Serial.println(state);
+		
 		switch(state)
 		{
 		case STATE_INIT:
-			init();
-
-			// attach Servo objects to the corresponding PINs
+						// attach Servo objects to the corresponding PINs
 			steeringServo.attach(PIN_STEERING_SERVO);
 			steeringServo.write(90); // Set it to neutral position
 			speedServo.attach(PIN_SPEED_SERVO);
 			calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
 			if (MOTOR_SETUP == 1)
-				setupESCPWM();
-			Serial.begin(9600);
-			Serial.println("Setup done");
+				setupESCPWM();			
+			
 			state = STATE_NICHT_GESTARTET;
 			break;
 		case STATE_NICHT_GESTARTET:
@@ -125,23 +132,36 @@ int main()
 			break;
 
 		case STATE_REGELUNG:
-			leftDistance = analogRead(LEFTSENSOR);
+			old_leftDistance = leftDistance;
+			old_rightDistance = rightDistance;
 			middleDistance = analogRead(MIDDLESENSOR);
-			rightDistance = analogRead(RIGTHSENSOR);
+			rightDistance = analogRead(RIGHTSENSOR);
+			leftDistance = analogRead(LEFTSENSOR);
 
-			int steeringDeg;
-			if (middleDistance >= MIDDLE_OBSTACLE_THRESHOLD)
+			if(leftDistance - old_leftDistance > DIFFERENCE_DETECTION_CURVE)
 			{
-				steeringDeg = MIDDLE_OBSTACLE_STEER_DEG;
+				state = STATE_LEFT_CURVE;
+			}
+			else if(rightDistance - old_rightDistance > DIFFERENCE_DETECTION_CURVE)
+			{
+				state = STATE_RIGHT_CURVE;
 			}
 			else
 			{
-				steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
+
+				int steeringDeg;
+				if (middleDistance >= MIDDLE_OBSTACLE_THRESHOLD)
+				{
+					steeringDeg = MIDDLE_OBSTACLE_STEER_DEG;
+				}
+				else
+				{
+					steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
+				}
+
+				steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
+				steeringServo.write(steeringDeg);
 			}
-
-			steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
-			steeringServo.write(steeringDeg);
-
 			/*Serial.print("Left: ");
 			Serial.print(leftDistance);
 			Serial.print(" Middle: ");
@@ -151,12 +171,31 @@ int main()
 			Serial.print(" SteeringDeg: ");
 			Serial.println(steeringDeg);
 			*/
+			break;
+
+		case STATE_LEFT_CURVE:			
+			speedServo.writeMicroseconds(SPEED_CURVE); // set into Brake mode
+			steeringServo.write(STEERING_MIN_DEG); 
+			leftDistance = analogRead(LEFTSENSOR);
+			if(leftDistance > DISTANCE_DETECTION_END_OF_CURVE)
+				state = STATE_REGELUNG;
+		break;
+
+		case STATE_RIGHT_CURVE:			
+			speedServo.writeMicroseconds(SPEED_CURVE); // set into Brake mode
+			steeringServo.write(STEERING_MIN_DEG); 
+			rightDistance = analogRead(RIGHTSENSOR);
+			if(rightDistance > DISTANCE_DETECTION_END_OF_CURVE)
+				state = STATE_REGELUNG;
+		break;
 
 		case STATE_STOPPED:
 			// stopen des Fahrzeugs
 			speedServo.writeMicroseconds(SPEED_STOPPED); // set into Brake mode
 			steeringServo.write(STEERING_NEUTRAL_DEG);            // set steering to neutral
 			calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
+
+			state = STATE_NICHT_GESTARTET;
 			break;
 		}
 
