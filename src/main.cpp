@@ -165,6 +165,17 @@ void loop()
     (void)rightDistance;
     (void)vBat;
 
+    Serial.print("VBat: ");
+    float vBatFloat = vBat * 0.010089f; // map to real voltage (10k/47k divider and 5V ref)
+    Serial.print(vBatFloat);
+    if (runMode == 0)
+        Serial.println(" (not running)");
+
+    if (vBatFloat < 3.3f)
+    {
+        Serial.println("Battery too low!");
+        runMode = 0;
+    }
     // Now check the Button and run control strategies
 
     if (digitalRead(STOPBUTTON) == LOW)
@@ -197,13 +208,13 @@ void loop()
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
         steeringServo.write(steeringDeg);
 
-        Serial.print("Left: ");
+        Serial.print("\tLeft: ");
         Serial.print(leftDistance);
-        Serial.print(" Middle: ");
+        Serial.print("\tMiddle: ");
         Serial.print(middleDistance);
-        Serial.print(" Right: ");
+        Serial.print("\tRight: ");
         Serial.print(rightDistance);
-        Serial.print(" SteeringDeg: ");
+        Serial.print("\tSteeringDeg: ");
         Serial.println(steeringDeg);
     }
     else
