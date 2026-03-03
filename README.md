@@ -93,5 +93,7 @@ Hinweis: Kommentare können vom tatsächlichen `#define` abweichen – **Quelle 
 
 ## TODO
 
-- [ ] Mittig Fahren
+- [x] Mittig Fahren
+- [ ] Batteriespannung messen und ausgeben
+- [ ] PID Speed
 - [ ] State Machine (stop/schnellstart/regel/kurve-links/kurve-rechts)
