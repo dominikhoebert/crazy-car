@@ -15,6 +15,7 @@ Sensor: 20 (far) ... 400 (close)
 #define TARGET_DISTANCE 200
 #define SPEED 1800
 #define MOTOR_SETUP 0
+#define QUIET_MODE 0
 
 // Speed tuning (ESC in microseconds)
 #define SPEED_NEUTRAL_US 1500
@@ -239,9 +240,13 @@ void loop()
     (void)rightDistance;
     (void)vBat;
 
-    Serial.print("VBat: ");
-    float vBatFloat = vBat * 0.0152867037f; // map to real voltage (10k/47k divider and 5V ref)
-    Serial.print(vBatFloat);
+    // map to real voltage (10k/47k divider and 5V ref)
+    float vBatFloat = vBat * 0.0152867037f;
+    if (QUIET_MODE == 0)
+    {
+        Serial.print("VBat: ");
+        Serial.print(vBatFloat);
+    }
     if (runMode == 0)
         Serial.println(" (not running)");
 
@@ -365,16 +370,19 @@ void loop()
             (void)calcSpeedUsFromMiddlePID(middleDistance, false);
         }
 
-        Serial.print("\tLeft: ");
-        Serial.print(leftDistance);
-        Serial.print("\tMiddle: ");
-        Serial.print(middleDistance);
-        Serial.print("\tRight: ");
-        Serial.print(rightDistance);
-        Serial.print("\tSpeedUs: ");
-        Serial.print(speedUs);
-        Serial.print("\tSteeringDeg: ");
-        Serial.println(steeringDeg);
+        if (QUIET_MODE == 0)
+        {
+            Serial.print("\tLeft: ");
+            Serial.print(leftDistance);
+            Serial.print("\tMiddle: ");
+            Serial.print(middleDistance);
+            Serial.print("\tRight: ");
+            Serial.print(rightDistance);
+            Serial.print("\tSpeedUs: ");
+            Serial.print(speedUs);
+            Serial.print("\tSteeringDeg: ");
+            Serial.println(steeringDeg);
+        }
     }
     else
     {
