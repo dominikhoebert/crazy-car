@@ -117,102 +117,6 @@ Servo speedServo;    // speedServo
  **************************************************************************/
 unsigned char runMode = 0; // Variable = 0 ... stop
 
-enum TrackSegment : uint8_t
-{
-    SEG_UNKNOWN = 0,
-    SEG_LEFT_CURVE,
-    SEG_RIGHT_CURVE,
-    SEG_STRAIGHT,
-};
-
-static const char *trackSegmentToString(TrackSegment seg)
-{
-    switch (seg)
-    {
-    case SEG_LEFT_CURVE:
-        return "LEFT";
-    case SEG_RIGHT_CURVE:
-        return "RIGHT";
-    case SEG_STRAIGHT:
-        return "STRAIGHT";
-    case SEG_UNKNOWN:
-    default:
-        return "UNKNOWN";
-    }
-}
-
-static TrackSegment updateTrackSegment(int leftDistance, int rightDistance, bool enabled)
-{
-    static bool initialized = false;
-    static int lastLeft = 0;
-    static int lastRight = 0;
-    static uint8_t leftJumpCount = 0;
-    static uint8_t rightJumpCount = 0;
-    static uint8_t straightCount = 0;
-    static TrackSegment segment = SEG_UNKNOWN;
-
-    if (!enabled)
-    {
-        initialized = false;
-        leftJumpCount = 0;
-        rightJumpCount = 0;
-        straightCount = 0;
-        segment = SEG_UNKNOWN;
-        return segment;
-    }
-
-    if (!initialized)
-    {
-        lastLeft = leftDistance;
-        lastRight = rightDistance;
-        initialized = true;
-        segment = SEG_UNKNOWN;
-        return segment;
-    }
-
-    const int dLeft = leftDistance - lastLeft;
-    const int dRight = rightDistance - lastRight;
-
-    // Curve detection by sudden "near" jumps on left or right.
-    if (dLeft >= SEG_JUMP_THRESHOLD)
-        leftJumpCount++;
-    else
-        leftJumpCount = 0;
-
-    if (dRight >= SEG_JUMP_THRESHOLD)
-        rightJumpCount++;
-    else
-        rightJumpCount = 0;
-
-    // Straight detection: left/right similar again AND both are near enough.
-    const bool isSimilar = abs(leftDistance - rightDistance) <= SEG_SIMILAR_THRESHOLD;
-    const bool isNear = (leftDistance >= SEG_NEAR_THRESHOLD) && (rightDistance >= SEG_NEAR_THRESHOLD);
-    if (isSimilar && isNear)
-        straightCount++;
-    else
-        straightCount = 0;
-
-    if (leftJumpCount >= SEG_CONFIRM_COUNT)
-    {
-        segment = SEG_LEFT_CURVE;
-        leftJumpCount = rightJumpCount = straightCount = 0;
-    }
-    else if (rightJumpCount >= SEG_CONFIRM_COUNT)
-    {
-        segment = SEG_RIGHT_CURVE;
-        leftJumpCount = rightJumpCount = straightCount = 0;
-    }
-    else if (straightCount >= SEG_CONFIRM_COUNT)
-    {
-        segment = SEG_STRAIGHT;
-        leftJumpCount = rightJumpCount = straightCount = 0;
-    }
-
-    lastLeft = leftDistance;
-    lastRight = rightDistance;
-    return segment;
-}
-
 static int calcSteeringDegFromLeftRightPID(int leftDistance, int rightDistance, bool enabled)
 {
     // Incremental (velocity-form) PID as in the user's example.
@@ -330,7 +234,7 @@ void loop()
     (void)vBat;
 
     Serial.print("VBat: ");
-    float vBatFloat = vBat * 0.010089f; // map to real voltage (10k/47k divider and 5V ref)
+    float vBatFloat = vBat * 0.0152867037f; // map to real voltage (10k/47k divider and 5V ref)
     Serial.print(vBatFloat);
     if (runMode == 0)
         Serial.println(" (not running)");
@@ -365,7 +269,6 @@ void loop()
 
     if (runMode == 1)
     {
-        const TrackSegment seg = updateTrackSegment(leftDistance, rightDistance, true);
 
         // Geschwindigkeit
         const int speedUs = calcSpeedUsFromMiddlePID(middleDistance, GESCHWINDIGKEITSREGELUNG == 1);
@@ -396,12 +299,7 @@ void loop()
             wallHitCount = 0;
 
             bool wasTurningRight;
-            if (seg == SEG_RIGHT_CURVE)
-                wasTurningRight = true;
-            else if (seg == SEG_LEFT_CURVE)
-                wasTurningRight = false;
-            else
-                wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
+            wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
             const int steerSameDeg = wasTurningRight ? STEERING_MAX_DEG : STEERING_MIN_DEG;
             const int steerOppDeg = wasTurningRight ? STEERING_MIN_DEG : STEERING_MAX_DEG;
 
@@ -430,8 +328,6 @@ void loop()
         Serial.print(middleDistance);
         Serial.print("\tRight: ");
         Serial.print(rightDistance);
-        Serial.print("\tSeg: ");
-        Serial.print(trackSegmentToString(seg));
         Serial.print("\tSpeedUs: ");
         Serial.print(speedUs);
         Serial.print("\tSteeringDeg: ");
@@ -442,6 +338,5 @@ void loop()
         // reset PID state when not driving, so next start begins centered
         (void)calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
         (void)calcSpeedUsFromMiddlePID(middleDistance, false);
-        (void)updateTrackSegment(leftDistance, rightDistance, false);
     }
 }
