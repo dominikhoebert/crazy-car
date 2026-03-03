@@ -46,7 +46,7 @@ Sensor: 20 (far) ... 400 (close)
 // Track offset: drive ~30% to the right instead of centered.
 // Implemented as a bias on the left-right difference setpoint.
 // 0.0f => center, 0.30f => right sensor can be ~30% "closer" (higher ADC) than left.
-#define REGLER_LR_RIGHT_BIAS_FRAC 0.30f
+#define REGLER_LR_RIGHT_BIAS_FRAC 0.20f
 
 // Simple segment recognition (left curve / right curve / straight)
 #define SEG_JUMP_THRESHOLD 80
@@ -54,13 +54,13 @@ Sensor: 20 (far) ... 400 (close)
 #define SEG_NEAR_THRESHOLD 220
 #define SEG_CONFIRM_COUNT 3
 
-// RunMode 2: recovery when "in the wall"
+// WallRecovery: recovery when "in the wall"
 #define WALL_HIT_THRESHOLD 400
 #define WALL_HIT_CONFIRM_COUNT 3
-#define RUNMODE2_REVERSE_US 800
-#define RUNMODE2_REVERSE_MS 400
-#define RUNMODE2_FORWARD_US SPEED
-#define RUNMODE2_FORWARD_MS 700
+#define WALLRECOVERY_REVERSE_US 800
+#define WALLRECOVERY_REVERSE_MS 400
+#define WALLRECOVERY_FORWARD_US SPEED
+#define WALLRECOVERY_FORWARD_MS 700
 
 #include <Arduino.h>
 /***********************************************************************
@@ -356,7 +356,7 @@ void loop()
             runMode = 1; // fahrzeug darf fahren
     }
 
-    // RunMode 2: wall recovery (simple blocking sequence)
+    // WallRecovery (simple blocking sequence)
     static uint8_t wallHitCount = 0;
     static int lastSteeringDeg = STEERING_NEUTRAL_DEG;
 
@@ -407,15 +407,15 @@ void loop()
 
             // Reverse, full lock same direction
             steeringServo.write(steerSameDeg);
-            speedServo.writeMicroseconds(RUNMODE2_REVERSE_US);
-            delay(RUNMODE2_REVERSE_MS);
+            speedServo.writeMicroseconds(WALLRECOVERY_REVERSE_US);
+            delay(WALLRECOVERY_REVERSE_MS);
             speedServo.writeMicroseconds(SPEED_BRAKE_US);
             delay(200);
 
             // Forward, full lock opposite direction
             steeringServo.write(steerOppDeg);
-            speedServo.writeMicroseconds(RUNMODE2_FORWARD_US);
-            delay(RUNMODE2_FORWARD_MS);
+            speedServo.writeMicroseconds(WALLRECOVERY_FORWARD_US);
+            delay(WALLRECOVERY_FORWARD_MS);
 
             // Back to normal mode, reset PIDs so they don't "jump"
             speedServo.writeMicroseconds(SPEED_BRAKE_US);
