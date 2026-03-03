@@ -162,10 +162,6 @@ int main()
 
 
 
-		if (runMode == 1)
-		{
-			// Geschwindigkeit
-			
 	}
 
 	return 0;
