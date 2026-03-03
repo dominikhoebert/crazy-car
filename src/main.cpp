@@ -15,7 +15,7 @@ Sensor: 20 (far) ... 400 (close)
 #define TARGET_DISTANCE 200
 #define SPEED 1800
 #define MOTOR_SETUP 0
-#define QUIET_MODE 0
+#define QUIET_MODE 1
 
 // Speed tuning (ESC in microseconds)
 #define SPEED_NEUTRAL_US 1500
@@ -247,7 +247,7 @@ void loop()
         Serial.print("VBat: ");
         Serial.print(vBatFloat);
     }
-    if (runMode == 0)
+    if (runMode == 0 && QUIET_MODE == 0)
         Serial.println(" (not running)");
 
     if (vBatFloat < 3.3f)
