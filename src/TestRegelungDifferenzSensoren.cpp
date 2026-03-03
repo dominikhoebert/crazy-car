@@ -76,11 +76,14 @@ unsigned char runMode = 0; //Variable = 0 ... stop
 #define KI 0.01
 #define KD 0
 
+#define TARGET_VALUE 0
+
 
 int main()
 {
 	int e0, e1, e2;
 	int leftDistance, middleDistance, rightDistance;
+	int pidValue;
 	
 	Serial.begin(9600);
 	//attach Servo objects to the corresponding PINs
@@ -90,6 +93,9 @@ int main()
 	//setupESCPWM();
 	speedServo.writeMicroseconds(1800); //lowspeed ahead
 
+	e0=e1=e2=0;
+
+
 	while(1)
 	{
 			//First get all data
@@ -97,7 +103,13 @@ int main()
 		middleDistance = analogRead(MIDDLESENSOR);
 		rightDistance = analogRead(RIGTHSENSOR);
 
+		e2 = e1;
+		e1 = e0;
+		e0 = (leftDistance - rightDistance) - TARGET_VALUE;
+
+		pidValue = pidValue + KP*(e0-e1) + KI*(e1) + KD*(e0-2*e1+e2);
 		steeringServo.write(60);
+		
 	}
 
 	return 0;
