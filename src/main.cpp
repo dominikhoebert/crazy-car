@@ -50,9 +50,9 @@ Sensor: 20 (far) ... 400 (close)
 #define REGLER_LR_RIGHT_BIAS_FRAC 0.30f
 
 // Simple segment recognition (left curve / right curve / straight)
-#define SEG_JUMP_THRESHOLD 80
-#define SEG_SIMILAR_THRESHOLD 25
-#define SEG_NEAR_THRESHOLD 220
+#define SEG_JUMP_THRESHOLD 40
+#define SEG_SIMILAR_THRESHOLD 50
+#define SEG_NEAR_THRESHOLD 250
 #define SEG_CONFIRM_COUNT 3
 
 // WallRecovery: recovery when "in the wall"
@@ -237,7 +237,6 @@ void loop()
     int rightDistance = analogRead(RIGTHSENSOR);
     int vBat = analogRead(VBAT);
 
-    (void)rightDistance;
     (void)vBat;
 
     // map to real voltage (10k/47k divider and 5V ref)
@@ -277,14 +276,52 @@ void loop()
     static unsigned long lastWallRecoveryMs = 0;
     static int lastWallRecoveryReverseSteerDeg = STEERING_NEUTRAL_DEG;
 
+    // Kurvenmodus: wenn ein Seitensensor sprunghaft "weit weg" wird (ADC sinkt),
+    // dann stark in die entsprechende Richtung lenken, bis derselbe Sensor wieder
+    // "nah" an der Wand ist.
+    static uint8_t curveMode = 0; // 0=aus, 1=links, 2=rechts
+    static int prevLeftDistance = -1;
+    static int prevRightDistance = -1;
+
+    if (prevLeftDistance < 0)
+        prevLeftDistance = leftDistance;
+    if (prevRightDistance < 0)
+        prevRightDistance = rightDistance;
+
     if (runMode == 0)
     {
         wallHitCount = 0;
         lastWallRecoveryMs = 0;
+        curveMode = 0;
     }
 
     if (runMode == 1)
     {
+
+        // --- Kurvenmodus Erkennung / Exit ---
+        // ADC sinkt => Abstand wird größer. Ein starker Abfall bedeutet: Wand auf
+        // dieser Seite "öffnet" sich -> Kurve in diese Richtung.
+        if (curveMode == 0)
+        {
+            const int leftDrop = prevLeftDistance - leftDistance;
+            const int rightDrop = prevRightDistance - rightDistance;
+
+            if ((leftDrop >= SEG_JUMP_THRESHOLD) || (rightDrop >= SEG_JUMP_THRESHOLD))
+            {
+                // Wenn beides triggert, nimm den stärkeren Drop.
+                curveMode = (leftDrop >= rightDrop) ? 1 : 2;
+            }
+        }
+        else if (curveMode == 1)
+        {
+            if (leftDistance >= SEG_NEAR_THRESHOLD)
+                curveMode = 0;
+        }
+        else if (curveMode == 2)
+        {
+            if (rightDistance >= SEG_NEAR_THRESHOLD)
+                curveMode = 0;
+        }
 
         // Geschwindigkeit
         const int speedUs = calcSpeedUsFromMiddlePID(middleDistance, GESCHWINDIGKEITSREGELUNG == 1);
@@ -293,6 +330,12 @@ void loop()
         int steeringDeg;
 
         steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
+
+        // Im Kurvenmodus: starker Einschlag (PID bleibt unverändert, wird nur übersteuert)
+        if (curveMode == 1)
+            steeringDeg = STEERING_MIN_DEG;
+        else if (curveMode == 2)
+            steeringDeg = STEERING_MAX_DEG;
 
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
         steeringServo.write(steeringDeg);
@@ -390,4 +433,8 @@ void loop()
         (void)calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
         (void)calcSpeedUsFromMiddlePID(middleDistance, false);
     }
+
+    // Update previous samples for next iteration
+    prevLeftDistance = leftDistance;
+    prevRightDistance = rightDistance;
 }
