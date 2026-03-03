@@ -115,14 +115,15 @@ int main()
 		case STATE_NICHT_GESTARTET:
 			if (digitalRead(STARTBUTTON) == LOW)
 			{
-				startTime = millis();
+				startTime = millis();				
 				state = STATE_GESTARTET;
 			}
 			
 			break;
 		case STATE_GESTARTET:
+			steeringServo.write(90);
 			speedServo.writeMicroseconds(SPEED_FULL);
-
+			
 			if(millis() - startTime > 1000)
 			{
 				speedServo.writeMicroseconds(SPEED);
@@ -138,11 +139,11 @@ int main()
 			rightDistance = analogRead(RIGHTSENSOR);
 			leftDistance = analogRead(LEFTSENSOR);
 
-			if(leftDistance - old_leftDistance > DIFFERENCE_DETECTION_CURVE)
+			if(old_leftDistance - leftDistance > DIFFERENCE_DETECTION_CURVE)
 			{
 				state = STATE_LEFT_CURVE;
 			}
-			else if(rightDistance - old_rightDistance > DIFFERENCE_DETECTION_CURVE)
+			else if(old_rightDistance - rightDistance > DIFFERENCE_DETECTION_CURVE)
 			{
 				state = STATE_RIGHT_CURVE;
 			}
