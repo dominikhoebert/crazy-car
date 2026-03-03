@@ -16,6 +16,20 @@ Sensor: 20 (far) ... 500 (close)
 #define SPEED 1800
 #define MOTOR_SETUP 0
 
+// Speed tuning (ESC in microseconds)
+#define SPEED_NEUTRAL_US 1500
+#define SPEED_BRAKE_US 1480
+#define SPEED_MIN_US SPEED_BRAKE_US
+#define SPEED_MAX_US 1800
+
+// Simple distance-hold PID using middle sensor (error = TARGET_DISTANCE - middle)
+// Output is ESC PWM in microseconds, clamped to forward + brake (no reverse).
+#define GESCHWINDIGKEITSREGELUNG 1
+#define REGLER_V_P 0.8f
+#define REGLER_V_I 0.02f
+#define REGLER_V_D 0.3f
+#define REGLER_V_DEADBAND 5
+
 // Steering tuning
 #define STEERING_NEUTRAL_DEG 90
 #define STEERING_MIN_DEG 50
@@ -125,6 +139,40 @@ static int calcSteeringDegFromLeftRightPID(int leftDistance, int rightDistance, 
     return constrain((int)lroundf(steeringDegF), STEERING_MIN_DEG, STEERING_MAX_DEG);
 }
 
+static int calcSpeedUsFromMiddlePID(int middleDistance, bool enabled)
+{
+    // Incremental (velocity-form) PID similar to the provided example.
+    static float err_0 = 0.0f;
+    static float err_1 = 0.0f;
+    static float err_2 = 0.0f;
+    static float pidOutUs = (float)SPEED;
+
+    if (!enabled)
+    {
+        err_0 = 0.0f;
+        err_1 = 0.0f;
+        err_2 = 0.0f;
+        pidOutUs = (float)SPEED;
+        return SPEED_BRAKE_US;
+    }
+
+    err_2 = err_1;
+    err_1 = err_0;
+    err_0 = (float)(TARGET_DISTANCE - middleDistance); // >0 => too far => speed up
+
+    if (fabsf(err_0) < (float)REGLER_V_DEADBAND)
+        err_0 = 0.0f;
+
+    pidOutUs = pidOutUs + (REGLER_V_P * (err_0 - err_1)) + (REGLER_V_I * (err_1)) + (REGLER_V_D * (err_0 - 2.0f * err_1 + err_2));
+
+    if (pidOutUs > (float)SPEED_MAX_US)
+        pidOutUs = (float)SPEED_MAX_US;
+    if (pidOutUs < (float)SPEED_MIN_US)
+        pidOutUs = (float)SPEED_MIN_US;
+
+    return (int)lroundf(pidOutUs);
+}
+
 void setupESCPWM()
 {
     const int CONFIG_DELAY = 5000;     // Zeit wie lange das Konfig Signal anliegt
@@ -175,14 +223,16 @@ void loop()
     {
         Serial.println("Battery too low!");
         runMode = 0;
+        speedServo.writeMicroseconds(SPEED_BRAKE_US);
+        steeringServo.write(STEERING_NEUTRAL_DEG);
     }
     // Now check the Button and run control strategies
 
     if (digitalRead(STOPBUTTON) == LOW)
     {
-        runMode = 0;                        // stopen des Fahrzeugs
-        speedServo.writeMicroseconds(1480); // set into Brake mode
-        steeringServo.write(90);            // set steering to neutral
+        runMode = 0;                                  // stopen des Fahrzeugs
+        speedServo.writeMicroseconds(SPEED_BRAKE_US); // set into Brake mode
+        steeringServo.write(90);                      // set steering to neutral
     }
     else
     {
@@ -193,7 +243,8 @@ void loop()
     if (runMode == 1)
     {
         // Geschwindigkeit
-        speedServo.writeMicroseconds(SPEED);
+        const int speedUs = calcSpeedUsFromMiddlePID(middleDistance, GESCHWINDIGKEITSREGELUNG == 1);
+        speedServo.writeMicroseconds(speedUs);
 
         int steeringDeg;
         if (middleDistance >= MIDDLE_OBSTACLE_THRESHOLD)
@@ -214,6 +265,8 @@ void loop()
         Serial.print(middleDistance);
         Serial.print("\tRight: ");
         Serial.print(rightDistance);
+        Serial.print("\tSpeedUs: ");
+        Serial.print(speedUs);
         Serial.print("\tSteeringDeg: ");
         Serial.println(steeringDeg);
     }
@@ -221,5 +274,6 @@ void loop()
     {
         // reset PID state when not driving, so next start begins centered
         (void)calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
+        (void)calcSpeedUsFromMiddlePID(middleDistance, false);
     }
 }

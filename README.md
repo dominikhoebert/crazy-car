@@ -70,6 +70,7 @@ Hinweis: Kommentare können vom tatsächlichen `#define` abweichen – **Quelle 
 - Distanz mitte: `MIDDLESENSOR` = A3
 
 ### Taster (negative Logik)
+
 - Start: `STARTBUTTON` = D12 (schwarze Taste)
 - Stop: `STOPBUTTON` = D13 (rote Taste)
 
@@ -94,6 +95,6 @@ Hinweis: Kommentare können vom tatsächlichen `#define` abweichen – **Quelle 
 ## TODO
 
 - [x] Mittig Fahren
-- [ ] Batteriespannung messen und ausgeben
-- [ ] PID Speed
+- [x] Batteriespannung messen und ausgeben
+- [x] PID Speed
 - [ ] State Machine (stop/schnellstart/regel/kurve-links/kurve-rechts)
