@@ -16,12 +16,18 @@ Sensor: 20 (far) ... 500 (close)
 #define SPEED 1800
 #define MOTOR_SETUP 0
 
-// Steering tuning (simple proportional control based on LEFT sensor only)
+// Steering tuning
 #define STEERING_NEUTRAL_DEG 90
 #define STEERING_MIN_DEG 50
 #define STEERING_MAX_DEG 130
-#define STEERING_DEADBAND 10
-#define STEERING_KP_DIV 6
+
+// Simple left/right centering PID (error = left - right; >0 => steer right)
+// Output is kept in 0..100 and mapped to steering angle.
+#define ANTRIEBSREGELUNG 1
+#define REGLER_LR_P 0.35f
+#define REGLER_LR_I 0.01f
+#define REGLER_LR_D 0.15f
+#define REGLER_LR_DEADBAND 5
 
 // Simple obstacle handling: if middle sensor sees close obstacle, force right turn
 #define MIDDLE_OBSTACLE_THRESHOLD 200
@@ -82,15 +88,41 @@ Servo speedServo;    // speedServo
  **************************************************************************/
 unsigned char runMode = 0; // Variable = 0 ... stop
 
-static int calcSteeringDegFromLeft(int leftDistance)
+static int calcSteeringDegFromLeftRightPID(int leftDistance, int rightDistance, bool enabled)
 {
-    const int error = leftDistance - TARGET_DISTANCE;
-    if (abs(error) <= STEERING_DEADBAND)
-        return STEERING_NEUTRAL_DEG;
+    // Incremental (velocity-form) PID as in the user's example.
+    static float err_0 = 0.0f;
+    static float err_1 = 0.0f;
+    static float err_2 = 0.0f;
+    static float pidOut = 50.0f; // 0..100, 50 = center
 
-    int offset = error / STEERING_KP_DIV; // closer to wall (bigger value) => steer more to the right
-    int steeringDeg = STEERING_NEUTRAL_DEG + offset;
-    return constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
+    if (!enabled)
+    {
+        err_0 = 0.0f;
+        err_1 = 0.0f;
+        err_2 = 0.0f;
+        pidOut = 50.0f;
+        return STEERING_NEUTRAL_DEG;
+    }
+
+    err_2 = err_1;
+    err_1 = err_0;
+    err_0 = (float)(leftDistance - rightDistance); // setpoint is 0 => centered
+
+    if (fabsf(err_0) < (float)REGLER_LR_DEADBAND)
+        err_0 = 0.0f;
+
+    pidOut = pidOut + (REGLER_LR_P * (err_0 - err_1)) + (REGLER_LR_I * (err_1)) + (REGLER_LR_D * (err_0 - 2.0f * err_1 + err_2));
+
+    if (pidOut > 100.0f)
+        pidOut = 100.0f;
+    if (pidOut < 0.0f)
+        pidOut = 0.0f;
+
+    // Map 0..100 to steering min..max
+    const float steeringSpan = (float)(STEERING_MAX_DEG - STEERING_MIN_DEG);
+    const float steeringDegF = (float)STEERING_MIN_DEG + (pidOut / 100.0f) * steeringSpan;
+    return constrain((int)lroundf(steeringDegF), STEERING_MIN_DEG, STEERING_MAX_DEG);
 }
 
 void setupESCPWM()
@@ -159,7 +191,7 @@ void loop()
         }
         else
         {
-            steeringDeg = calcSteeringDegFromLeft(leftDistance);
+            steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
         }
 
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
@@ -169,7 +201,14 @@ void loop()
         Serial.print(leftDistance);
         Serial.print(" Middle: ");
         Serial.print(middleDistance);
+        Serial.print(" Right: ");
+        Serial.print(rightDistance);
         Serial.print(" SteeringDeg: ");
         Serial.println(steeringDeg);
+    }
+    else
+    {
+        // reset PID state when not driving, so next start begins centered
+        (void)calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, false);
     }
 }
