@@ -46,7 +46,7 @@ Sensor: 20 (far) ... 400 (close)
 // Track offset: drive ~30% to the right instead of centered.
 // Implemented as a bias on the left-right difference setpoint.
 // 0.0f => center, 0.30f => right sensor can be ~30% "closer" (higher ADC) than left.
-#define REGLER_LR_RIGHT_BIAS_FRAC 0.20f
+#define REGLER_LR_RIGHT_BIAS_FRAC 0.30f
 
 // Simple segment recognition (left curve / right curve / straight)
 #define SEG_JUMP_THRESHOLD 80
@@ -57,6 +57,12 @@ Sensor: 20 (far) ... 400 (close)
 // WallRecovery: recovery when "in the wall"
 #define WALL_HIT_THRESHOLD 400
 #define WALL_HIT_CONFIRM_COUNT 3
+// If left/right differ by this much, assume the wall is more on that side.
+// (Higher ADC means closer.) Used only for the WallRecovery sequence.
+#define WALLRECOVERY_SIDE_DIFF_THRESHOLD 40
+// If WallRecovery triggers again within this window, reuse the previous
+// reverse steering direction.
+#define WALLRECOVERY_REPEAT_WINDOW_MS 5000UL
 #define WALLRECOVERY_REVERSE_US 800
 #define WALLRECOVERY_REVERSE_MS 400
 #define WALLRECOVERY_FORWARD_US SPEED
@@ -263,9 +269,14 @@ void loop()
     // WallRecovery (simple blocking sequence)
     static uint8_t wallHitCount = 0;
     static int lastSteeringDeg = STEERING_NEUTRAL_DEG;
+    static unsigned long lastWallRecoveryMs = 0;
+    static int lastWallRecoveryReverseSteerDeg = STEERING_NEUTRAL_DEG;
 
     if (runMode == 0)
+    {
         wallHitCount = 0;
+        lastWallRecoveryMs = 0;
+    }
 
     if (runMode == 1)
     {
@@ -298,20 +309,52 @@ void loop()
         {
             wallHitCount = 0;
 
-            bool wasTurningRight;
-            wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
-            const int steerSameDeg = wasTurningRight ? STEERING_MAX_DEG : STEERING_MIN_DEG;
-            const int steerOppDeg = wasTurningRight ? STEERING_MIN_DEG : STEERING_MAX_DEG;
+            const unsigned long nowMs = millis();
+
+            // If we hit the wall at an angle, pick the recovery steering based on
+            // which side is closer to the wall. (Higher ADC => closer.)
+            // Note: When reversing, steering *towards* the wall side tends to swing
+            // the front away from the wall.
+            const int lrDiff = leftDistance - rightDistance;
+            int steerReverseDeg;
+            if (lrDiff >= WALLRECOVERY_SIDE_DIFF_THRESHOLD)
+            {
+                // Left is closer => steer left while reversing
+                steerReverseDeg = STEERING_MIN_DEG;
+            }
+            else if (lrDiff <= -WALLRECOVERY_SIDE_DIFF_THRESHOLD)
+            {
+                // Right is closer => steer right while reversing
+                steerReverseDeg = STEERING_MAX_DEG;
+            }
+            else
+            {
+                // Fallback: keep previous behavior based on last steering direction
+                const bool wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
+                steerReverseDeg = wasTurningRight ? STEERING_MAX_DEG : STEERING_MIN_DEG;
+            }
+
+            // If we have to recover again shortly after, reuse the previous
+            // reverse steering direction to keep the behavior consistent.
+            if ((lastWallRecoveryMs != 0) && ((nowMs - lastWallRecoveryMs) <= WALLRECOVERY_REPEAT_WINDOW_MS))
+            {
+                steerReverseDeg = lastWallRecoveryReverseSteerDeg;
+            }
+
+            const int steerForwardDeg = (steerReverseDeg == STEERING_MAX_DEG) ? STEERING_MIN_DEG : STEERING_MAX_DEG;
+
+            lastWallRecoveryMs = nowMs;
+            lastWallRecoveryReverseSteerDeg = steerReverseDeg;
 
             // Reverse, full lock same direction
-            steeringServo.write(steerSameDeg);
+            steeringServo.write(steerReverseDeg);
             speedServo.writeMicroseconds(WALLRECOVERY_REVERSE_US);
             delay(WALLRECOVERY_REVERSE_MS);
             speedServo.writeMicroseconds(SPEED_BRAKE_US);
             delay(200);
 
             // Forward, full lock opposite direction
-            steeringServo.write(steerOppDeg);
+            steeringServo.write(steerForwardDeg);
             speedServo.writeMicroseconds(WALLRECOVERY_FORWARD_US);
             delay(WALLRECOVERY_FORWARD_MS);
 
