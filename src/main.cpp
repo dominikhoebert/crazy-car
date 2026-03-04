@@ -15,7 +15,7 @@ Sensor: 20 (far) ... 400 (close)
 #define TARGET_DISTANCE 200
 #define SPEED 1800
 #define MOTOR_SETUP 0
-#define QUIET_MODE 1
+#define QUIET_MODE 0
 
 // Speed tuning (ESC in microseconds)
 #define SPEED_NEUTRAL_US 1500
@@ -25,7 +25,7 @@ Sensor: 20 (far) ... 400 (close)
 
 // Simple distance-hold PID using middle sensor (error = TARGET_DISTANCE - middle)
 // Output is ESC PWM in microseconds, clamped to forward + brake (no reverse).
-#define GESCHWINDIGKEITSREGELUNG 1
+#define GESCHWINDIGKEITSREGELUNG 0
 #define REGLER_V_P 0.8f
 #define REGLER_V_I 0.02f
 #define REGLER_V_D 0.3f
@@ -49,11 +49,13 @@ Sensor: 20 (far) ... 400 (close)
 // 0.0f => center, 0.30f => right sensor can be ~30% "closer" (higher ADC) than left.
 #define REGLER_LR_RIGHT_BIAS_FRAC 0.30f
 
-// Simple segment recognition (left curve / right curve / straight)
-#define SEG_JUMP_THRESHOLD 80
-#define SEG_SIMILAR_THRESHOLD 25
-#define SEG_NEAR_THRESHOLD 220
-#define SEG_CONFIRM_COUNT 3
+// Curve override using middle sensor:
+// If the middle sensor is "near" and similar to both left/right, we are likely
+// facing a corner/curve. In that case, do NOT try to center between left/right,
+// but commit to the side with the farthest distance (lower ADC value).
+#define CURVE_MID_NEAR_THRESHOLD 220
+#define CURVE_MID_SIMILAR_DIFF 50
+#define CURVE_CONFIRM_COUNT 2
 
 // WallRecovery: recovery when "in the wall"
 #define WALL_HIT_THRESHOLD 400
@@ -293,6 +295,30 @@ void loop()
         int steeringDeg;
 
         steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
+
+        // Curve override: use middle sensor to detect corner and steer towards
+        // the side with the largest distance.
+        static uint8_t curveConfirmCount = 0;
+        const bool midNear = (middleDistance >= CURVE_MID_NEAR_THRESHOLD);
+        const bool midSimilarToLeft = (abs(middleDistance - leftDistance) <= CURVE_MID_SIMILAR_DIFF);
+        const bool midSimilarToRight = (abs(middleDistance - rightDistance) <= CURVE_MID_SIMILAR_DIFF);
+        const bool curveCandidate = midNear && midSimilarToLeft && midSimilarToRight;
+
+        if (curveCandidate)
+        {
+            if (curveConfirmCount < 255)
+                curveConfirmCount++;
+        }
+        else
+        {
+            curveConfirmCount = 0;
+        }
+
+        if (curveConfirmCount >= CURVE_CONFIRM_COUNT)
+        {
+            // Lower ADC => farther away => more free space.
+            steeringDeg = (leftDistance <= rightDistance) ? STEERING_MIN_DEG : STEERING_MAX_DEG;
+        }
 
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
         steeringServo.write(steeringDeg);
