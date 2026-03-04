@@ -9,7 +9,9 @@
 #define STATE_STOPPED 13
 #define STATE_BLITZ_START 15
 #define STATE_REGELUNG 20
-#define STATE_REVERSE 25
+#define STATE_REVERSE_STRAIGHT 25
+#define STATE_REVERSE_LEFT 26
+#define STATE_REVERSE_RIGHT 27
 #define STATE_LEFT_CURVE 30
 #define STATE_RIGHT_CURVE 40
 
@@ -26,10 +28,11 @@ Sensor: 20 (far) ... 500 (close)
 */
 
 #define TARGET_DISTANCE 200
-#define SPEED 1900
+#define SPEED 1800
 #define SPEED_STOPPED 1480
 #define SPEED_FULL 2000
-#define SPEED_CURVE 1800
+#define SPEED_CURVE 1700
+#define SPEED_REVERSE 800
 #define MOTOR_SETUP 0
 
 // Steering tuning
@@ -40,7 +43,7 @@ Sensor: 20 (far) ... 500 (close)
 // Simple left/right centering PID (error = left - right; >0 => steer right)
 // Output is kept in 0..100 and mapped to steering angle.
 #define ANTRIEBSREGELUNG 1
-#define REGLER_LR_P 1.0f
+#define REGLER_LR_P 10.0f
 #define REGLER_LR_I 0.01f
 #define REGLER_LR_D 0.00f
 #define REGLER_LR_DEADBAND 5
@@ -57,7 +60,7 @@ Sensor: 20 (far) ... 500 (close)
 #define RIGHTSENSOR A2
 #define VBAT A0
 
-#define DIFFERENCE_DETECTION_CURVE 40
+#define DIFFERENCE_DETECTION_CURVE 30
 #define DISTANCE_DETECTION_END_OF_CURVE 110
 
 /*************************************************************************/
@@ -101,7 +104,18 @@ int main()
 
 		//Serial.print("State = ");		
 		//Serial.println(state);
+		if(middleDistance > MIDDLE_OBSTACLE_THRESHOLD)
+		{
+			if(state == STATE_REGELUNG)
+				state = STATE_REVERSE_STRAIGHT;
+			else if(state == STATE_LEFT_CURVE)
+				state = STATE_REVERSE_LEFT;
+			else if(state == STATE_RIGHT_CURVE)
+				state = STATE_REVERSE_RIGHT;
+		}
 		
+
+
 		switch(state)
 		{
 		case STATE_INIT:
@@ -143,11 +157,6 @@ int main()
 			rightDistance = analogRead(RIGHTSENSOR);
 			leftDistance = analogRead(LEFTSENSOR);
 
-			/*if(middleDistance > MIDDLE_OBSTACLE_THRESHOLD)
-			{
-				state = STATE_REVERSE;
-			}
-			else*/ 
 			if(old_leftDistance - leftDistance > DIFFERENCE_DETECTION_CURVE)
 			{
 				state = STATE_LEFT_CURVE;
@@ -189,8 +198,43 @@ int main()
 			
 			break;
 
-		case STATE_REVERSE:
-			
+		case STATE_REVERSE_LEFT:
+			speedServo.writeMicroseconds(SPEED_REVERSE); // set into Brake mode
+			steeringServo.write(STEERING_MAX_DEG); 
+			delay(400);
+			speedServo.writeMicroseconds(SPEED_STOPPED);
+			steeringServo.write(STEERING_NEUTRAL_DEG); 
+			state = STATE_REGELUNG;	
+			break;	
+
+		case STATE_REVERSE_RIGHT:
+			speedServo.writeMicroseconds(SPEED_REVERSE); // set into Brake mode
+			steeringServo.write(STEERING_MIN_DEG); 
+			delay(400);
+			speedServo.writeMicroseconds(SPEED_STOPPED);
+			steeringServo.write(STEERING_NEUTRAL_DEG); 
+			state = STATE_REGELUNG;	
+			break;
+		case STATE_REVERSE_STRAIGHT:
+			rightDistance = analogRead(RIGHTSENSOR);
+			leftDistance = analogRead(LEFTSENSOR);
+
+			if(leftDistance < rightDistance)
+			{
+				steeringServo.write(STEERING_MIN_DEG);
+			}
+			else
+			{
+				steeringServo.write(STEERING_MAX_DEG);
+			}
+			speedServo.writeMicroseconds(SPEED_REVERSE); // set into Brake mode
+			 
+			delay(400);
+			speedServo.writeMicroseconds(SPEED_STOPPED);
+			steeringServo.write(STEERING_NEUTRAL_DEG); 
+			state = STATE_REGELUNG;	
+			break;
+
 		case STATE_LEFT_CURVE:			
 			speedServo.writeMicroseconds(SPEED_CURVE); // set into Brake mode
 			steeringServo.write(STEERING_MIN_DEG); 
