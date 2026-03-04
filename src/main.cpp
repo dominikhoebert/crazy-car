@@ -59,6 +59,11 @@ Sensor: 20 (far) ... 400 (close)
 #define CURVE_MID_NEAR_THRESHOLD 75
 #define CURVE_MID_SIMILAR_DIFF 50
 #define CURVE_CONFIRM_COUNT 2
+// When curve override triggers, keep steering committed for this long.
+#define CURVE_OVERRIDE_HOLD_MS 1000UL
+// Abort the curve override early if the wall on the turn-inside gets too close.
+// (Higher ADC means closer.)
+#define CURVE_OVERRIDE_SIDE_TOO_CLOSE_THRESHOLD 220
 
 // WallRecovery: recovery when "in the wall"
 #define WALL_HIT_THRESHOLD 400
@@ -291,10 +296,20 @@ void loop()
     static unsigned long lastWallRecoveryMs = 0;
     static int lastWallRecoveryReverseSteerDeg = STEERING_NEUTRAL_DEG;
 
+    // Curve override latch state
+    static uint8_t curveConfirmCount = 0;
+    static bool curveOverrideActive = false;
+    static unsigned long curveOverrideStartMs = 0;
+    static int curveOverrideSteerDeg = STEERING_NEUTRAL_DEG;
+
     if (runMode == 0)
     {
         wallHitCount = 0;
         lastWallRecoveryMs = 0;
+        curveConfirmCount = 0;
+        curveOverrideActive = false;
+        curveOverrideStartMs = 0;
+        curveOverrideSteerDeg = STEERING_NEUTRAL_DEG;
     }
 
     if (runMode == 1)
@@ -311,7 +326,6 @@ void loop()
 
         // Curve override: use middle sensor to detect corner and steer towards
         // the side with the largest distance.
-        static uint8_t curveConfirmCount = 0;
         const bool midNear = (middleDistance >= CURVE_MID_NEAR_THRESHOLD);
         const bool midSimilarToLeft = (abs(middleDistance - leftDistance) <= CURVE_MID_SIMILAR_DIFF);
         const bool midSimilarToRight = (abs(middleDistance - rightDistance) <= CURVE_MID_SIMILAR_DIFF);
@@ -320,22 +334,50 @@ void loop()
         const bool sidesMoreOpenThanMiddle = (leftDistance < middleDistance) && (rightDistance < middleDistance);
         const bool curveCandidate = midNear && midSimilarToLeft && midSimilarToRight && sidesMoreOpenThanMiddle;
 
-        if (curveCandidate)
+        // If we are currently overriding, keep it for a while unless the inside wall is too close.
+        if (curveOverrideActive)
         {
-            if (curveConfirmCount < 255)
-                curveConfirmCount++;
+            const unsigned long nowMs = millis();
+            const bool expired = (nowMs - curveOverrideStartMs) >= CURVE_OVERRIDE_HOLD_MS;
+            const int insideSideDistance = (curveOverrideSteerDeg == STEERING_MIN_DEG) ? leftDistance : rightDistance;
+            const bool insideWallTooClose = (insideSideDistance >= CURVE_OVERRIDE_SIDE_TOO_CLOSE_THRESHOLD);
+
+            if (expired || insideWallTooClose)
+            {
+                curveOverrideActive = false;
+                curveConfirmCount = 0;
+            }
+        }
+
+        if (curveOverrideActive)
+        {
+            steeringDeg = curveOverrideSteerDeg;
+            driveMode = (steeringDeg == STEERING_MIN_DEG) ? "CURVE_OVERRIDE_L" : "CURVE_OVERRIDE_R";
         }
         else
         {
-            curveConfirmCount = 0;
-        }
+            if (curveCandidate)
+            {
+                if (curveConfirmCount < 255)
+                    curveConfirmCount++;
+            }
+            else
+            {
+                curveConfirmCount = 0;
+            }
 
-        if (curveConfirmCount >= CURVE_CONFIRM_COUNT)
-        {
-            // Lower ADC => farther away => more free space.
-            steeringDeg = (leftDistance <= rightDistance) ? STEERING_MIN_DEG : STEERING_MAX_DEG;
-            // #DRIVEMODE: CURVE_OVERRIDE_L or CURVE_OVERRIDE_R
-            driveMode = (steeringDeg == STEERING_MIN_DEG) ? "CURVE_OVERRIDE_L" : "CURVE_OVERRIDE_R";
+            if (curveConfirmCount >= CURVE_CONFIRM_COUNT)
+            {
+                // Lower ADC => farther away => more free space.
+                curveOverrideSteerDeg = (leftDistance <= rightDistance) ? STEERING_MIN_DEG : STEERING_MAX_DEG;
+                curveOverrideStartMs = millis();
+                curveOverrideActive = true;
+                curveConfirmCount = 0;
+
+                steeringDeg = curveOverrideSteerDeg;
+                // #DRIVEMODE: CURVE_OVERRIDE_L or CURVE_OVERRIDE_R
+                driveMode = (steeringDeg == STEERING_MIN_DEG) ? "CURVE_OVERRIDE_L" : "CURVE_OVERRIDE_R";
+            }
         }
 
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
