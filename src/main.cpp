@@ -65,6 +65,15 @@ Sensor: 20 (far) ... 400 (close)
 // (Higher ADC means closer.)
 #define CURVE_OVERRIDE_SIDE_TOO_CLOSE_THRESHOLD 220
 
+// If the left wall is lost (left sensor far away), slow down and keep following
+// the right wall more cautiously.
+#define LEFT_WALL_LOST_THRESHOLD 50
+#define LEFT_WALL_LOST_CONFIRM_COUNT 3
+#define RIGHT_WALL_FOLLOW_SPEED_US 1720
+// While in LEFT_WALL_LOST mode, steer left if the front (middle) sensor sees an obstacle.
+#define LEFT_WALL_LOST_FRONT_AVOID_THRESHOLD 220
+#define LEFT_WALL_LOST_FRONT_AVOID_CONFIRM_COUNT 2
+
 // WallRecovery: recovery when "in the wall"
 #define WALL_HIT_THRESHOLD 400
 #define WALL_HIT_CONFIRM_COUNT 3
@@ -296,6 +305,9 @@ void loop()
     static unsigned long lastWallRecoveryMs = 0;
     static int lastWallRecoveryReverseSteerDeg = STEERING_NEUTRAL_DEG;
 
+    static uint8_t leftWallLostCount = 0;
+    static uint8_t leftWallLostAvoidCount = 0;
+
     // Curve override latch state
     static uint8_t curveConfirmCount = 0;
     static bool curveOverrideActive = false;
@@ -306,6 +318,8 @@ void loop()
     {
         wallHitCount = 0;
         lastWallRecoveryMs = 0;
+        leftWallLostCount = 0;
+        leftWallLostAvoidCount = 0;
         curveConfirmCount = 0;
         curveOverrideActive = false;
         curveOverrideStartMs = 0;
@@ -316,7 +330,26 @@ void loop()
     {
 
         // Geschwindigkeit
-        const int speedUs = calcSpeedUsFromMiddlePID(middleDistance, GESCHWINDIGKEITSREGELUNG == 1);
+        int speedUs = calcSpeedUsFromMiddlePID(middleDistance, GESCHWINDIGKEITSREGELUNG == 1);
+        bool leftWallLostActive = false;
+
+        // Left wall lost -> slow down while tracking the right wall.
+        if (leftDistance < LEFT_WALL_LOST_THRESHOLD)
+        {
+            if (leftWallLostCount < 255)
+                leftWallLostCount++;
+        }
+        else
+        {
+            leftWallLostCount = 0;
+        }
+
+        if (leftWallLostCount >= LEFT_WALL_LOST_CONFIRM_COUNT)
+        {
+            speedUs = min(speedUs, (int)RIGHT_WALL_FOLLOW_SPEED_US);
+            leftWallLostActive = true;
+        }
+
         speedServo.writeMicroseconds(speedUs);
 
         int steeringDeg;
@@ -380,6 +413,30 @@ void loop()
             }
         }
 
+        // While the left wall is lost, use the front sensor to avoid obstacles by steering left.
+        // Keep curve override behavior as higher priority.
+        if (leftWallLostActive && (driveMode == nullptr))
+        {
+            if (middleDistance >= LEFT_WALL_LOST_FRONT_AVOID_THRESHOLD)
+            {
+                if (leftWallLostAvoidCount < 255)
+                    leftWallLostAvoidCount++;
+            }
+            else
+            {
+                leftWallLostAvoidCount = 0;
+            }
+
+            if (leftWallLostAvoidCount >= LEFT_WALL_LOST_FRONT_AVOID_CONFIRM_COUNT)
+            {
+                steeringDeg = STEERING_MIN_DEG;
+                driveMode = "LEFT_WALL_LOST_AVOID_L";
+            }
+        }
+        else
+        {
+            leftWallLostAvoidCount = 0;
+        }
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
         steeringServo.write(steeringDeg);
 
@@ -391,6 +448,19 @@ void loop()
                 driveMode = "PID_M";
             else
                 driveMode = (steeringDeg >= STEERING_NEUTRAL_DEG) ? "PID_R" : "PID_L";
+        }
+
+        // If we lost the left wall and we're otherwise in PID-mode, label it.
+        // (Do not override higher-priority modes like CURVE_OVERRIDE_* or WALLRECOVERY_*.)
+        if (leftWallLostActive)
+        {
+            if ((strcmp(driveMode, "PID_L") == 0) || (strcmp(driveMode, "PID_R") == 0) || (strcmp(driveMode, "PID_M") == 0))
+            {
+                if (strcmp(driveMode, "PID_M") == 0)
+                    driveMode = "LEFT_WALL_LOST_M";
+                else
+                    driveMode = (strcmp(driveMode, "PID_R") == 0) ? "LEFT_WALL_LOST_R" : "LEFT_WALL_LOST_L";
+            }
         }
 
         lastSteeringDeg = steeringDeg;
