@@ -53,7 +53,7 @@ Sensor: 20 (far) ... 400 (close)
 // If the middle sensor is "near" and similar to both left/right, we are likely
 // facing a corner/curve. In that case, do NOT try to center between left/right,
 // but commit to the side with the farthest distance (lower ADC value).
-#define CURVE_MID_NEAR_THRESHOLD 220
+#define CURVE_MID_NEAR_THRESHOLD 75
 #define CURVE_MID_SIMILAR_DIFF 50
 #define CURVE_CONFIRM_COUNT 2
 
@@ -303,7 +303,10 @@ void loop()
         const bool midNear = (middleDistance >= CURVE_MID_NEAR_THRESHOLD);
         const bool midSimilarToLeft = (abs(middleDistance - leftDistance) <= CURVE_MID_SIMILAR_DIFF);
         const bool midSimilarToRight = (abs(middleDistance - rightDistance) <= CURVE_MID_SIMILAR_DIFF);
-        const bool curveCandidate = midNear && midSimilarToLeft && midSimilarToRight;
+        // Only override when the middle sensor indicates an obstacle ahead,
+        // while both sides are "more open" (lower ADC => farther).
+        const bool sidesMoreOpenThanMiddle = (leftDistance < middleDistance) && (rightDistance < middleDistance);
+        const bool curveCandidate = midNear && midSimilarToLeft && midSimilarToRight && sidesMoreOpenThanMiddle;
 
         if (curveCandidate)
         {
