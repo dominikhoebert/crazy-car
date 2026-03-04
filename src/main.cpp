@@ -25,7 +25,7 @@ Sensor: 20 (far) ... 400 (close)
 
 // Simple distance-hold PID using middle sensor (error = TARGET_DISTANCE - middle)
 // Output is ESC PWM in microseconds, clamped to forward + brake (no reverse).
-#define GESCHWINDIGKEITSREGELUNG 0
+#define GESCHWINDIGKEITSREGELUNG 1
 #define REGLER_V_P 0.8f
 #define REGLER_V_I 0.02f
 #define REGLER_V_D 0.3f
@@ -35,6 +35,9 @@ Sensor: 20 (far) ... 400 (close)
 #define STEERING_NEUTRAL_DEG 90
 #define STEERING_MIN_DEG 50
 #define STEERING_MAX_DEG 130
+
+// Debug/labeling: consider steering "minimal" when close to neutral.
+#define PID_M_STEER_DEADBAND_DEG 3
 
 // Simple left/right centering PID (error = left - right; >0 => steer right)
 // Output is kept in 0..100 and mapped to steering angle.
@@ -125,6 +128,15 @@ Servo speedServo;    // speedServo
  * Global Variablen
  **************************************************************************/
 unsigned char runMode = 0; // Variable = 0 ... stop
+
+static void serialPrintIntWidth(int value, uint8_t width)
+{
+    // Prints right-aligned integer with leading spaces to a fixed width.
+    // If the number exceeds the width, it will print the full number.
+    char buf[10];
+    snprintf(buf, sizeof(buf), "%*d", (int)width, value);
+    Serial.print(buf);
+}
 
 static int calcSteeringDegFromLeftRightPID(int leftDistance, int rightDistance, bool enabled)
 {
@@ -293,7 +305,7 @@ void loop()
         speedServo.writeMicroseconds(speedUs);
 
         int steeringDeg;
-        const char *driveMode = "LR_PID";
+        const char *driveMode = nullptr;
 
         steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
 
@@ -322,12 +334,22 @@ void loop()
         {
             // Lower ADC => farther away => more free space.
             steeringDeg = (leftDistance <= rightDistance) ? STEERING_MIN_DEG : STEERING_MAX_DEG;
-            // #DRIVEMODE: CURVE_OVERRIDE_L/R
-            driveMode = "CURVE_OVERRIDE_L/R";
+            // #DRIVEMODE: CURVE_OVERRIDE_L or CURVE_OVERRIDE_R
+            driveMode = (steeringDeg == STEERING_MIN_DEG) ? "CURVE_OVERRIDE_L" : "CURVE_OVERRIDE_R";
         }
 
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
         steeringServo.write(steeringDeg);
+
+        // Default mode: PID with current steering direction
+        if (driveMode == nullptr)
+        {
+            const int steerDelta = abs(steeringDeg - STEERING_NEUTRAL_DEG);
+            if (steerDelta <= PID_M_STEER_DEADBAND_DEG)
+                driveMode = "PID_M";
+            else
+                driveMode = (steeringDeg >= STEERING_NEUTRAL_DEG) ? "PID_R" : "PID_L";
+        }
 
         lastSteeringDeg = steeringDeg;
 
@@ -373,8 +395,8 @@ void loop()
                 // Fallback: keep previous behavior based on last steering direction
                 const bool wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
                 steerReverseDeg = wasTurningRight ? STEERING_MAX_DEG : STEERING_MIN_DEG;
-                // #DRIVEMODE: WALLRECOVERY_REVERSE_L/R
-                driveMode = "WALLRECOVERY_REVERSE_L/R";
+                // #DRIVEMODE: WALLRECOVERY_REVERSE_L or WALLRECOVERY_REVERSE_R
+                driveMode = wasTurningRight ? "WALLRECOVERY_REVERSE_R" : "WALLRECOVERY_REVERSE_L";
             }
 
             // If we have to recover again shortly after, reuse the previous
@@ -382,8 +404,8 @@ void loop()
             if ((lastWallRecoveryMs != 0) && ((nowMs - lastWallRecoveryMs) <= WALLRECOVERY_REPEAT_WINDOW_MS))
             {
                 steerReverseDeg = lastWallRecoveryReverseSteerDeg;
-                // #DRIVEMODE: WALLRECOVERY_REUSE_L/R
-                driveMode = "WALLRECOVERY_REUSE_L/R";
+                // #DRIVEMODE: WALLRECOVERY_REUSE_L or WALLRECOVERY_REUSE_R
+                driveMode = (steerReverseDeg == STEERING_MAX_DEG) ? "WALLRECOVERY_REUSE_R" : "WALLRECOVERY_REUSE_L";
             }
 
             const int steerForwardDeg = (steerReverseDeg == STEERING_MAX_DEG) ? STEERING_MIN_DEG : STEERING_MAX_DEG;
@@ -413,15 +435,15 @@ void loop()
         if (QUIET_MODE == 0)
         {
             Serial.print("\tLeft: ");
-            Serial.print(leftDistance);
+            serialPrintIntWidth(leftDistance, 3);
             Serial.print("\tMiddle: ");
-            Serial.print(middleDistance);
+            serialPrintIntWidth(middleDistance, 3);
             Serial.print("\tRight: ");
-            Serial.print(rightDistance);
+            serialPrintIntWidth(rightDistance, 3);
             Serial.print("\tSpeedUs: ");
-            Serial.print(speedUs);
+            serialPrintIntWidth(speedUs, 4);
             Serial.print("\tSteeringDeg: ");
-            Serial.print(steeringDeg);
+            serialPrintIntWidth(steeringDeg, 3);
             Serial.print("\tDriveMode: ");
             Serial.println(driveMode);
         }
