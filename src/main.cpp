@@ -293,6 +293,7 @@ void loop()
         speedServo.writeMicroseconds(speedUs);
 
         int steeringDeg;
+        const char *driveMode = "LR_PID";
 
         steeringDeg = calcSteeringDegFromLeftRightPID(leftDistance, rightDistance, ANTRIEBSREGELUNG == 1);
 
@@ -318,6 +319,8 @@ void loop()
         {
             // Lower ADC => farther away => more free space.
             steeringDeg = (leftDistance <= rightDistance) ? STEERING_MIN_DEG : STEERING_MAX_DEG;
+            // #DRIVEMODE: CURVE_OVERRIDE_L/R
+            driveMode = "CURVE_OVERRIDE_L/R";
         }
 
         steeringDeg = constrain(steeringDeg, STEERING_MIN_DEG, STEERING_MAX_DEG);
@@ -352,17 +355,23 @@ void loop()
             {
                 // Left is closer => steer left while reversing
                 steerReverseDeg = STEERING_MIN_DEG;
+                // #DRIVEMODE: WALLRECOVERY_REVERSE_SENSOR_L
+                driveMode = "WALLRECOVERY_REVERSE_SENSOR_L";
             }
             else if (lrDiff <= -WALLRECOVERY_SIDE_DIFF_THRESHOLD)
             {
                 // Right is closer => steer right while reversing
                 steerReverseDeg = STEERING_MAX_DEG;
+                // #DRIVEMODE: WALLRECOVERY_REVERSE_SENSOR_R
+                driveMode = "WALLRECOVERY_REVERSE_SENSOR_R";
             }
             else
             {
                 // Fallback: keep previous behavior based on last steering direction
                 const bool wasTurningRight = (lastSteeringDeg >= STEERING_NEUTRAL_DEG);
                 steerReverseDeg = wasTurningRight ? STEERING_MAX_DEG : STEERING_MIN_DEG;
+                // #DRIVEMODE: WALLRECOVERY_REVERSE_L/R
+                driveMode = "WALLRECOVERY_REVERSE_L/R";
             }
 
             // If we have to recover again shortly after, reuse the previous
@@ -370,6 +379,8 @@ void loop()
             if ((lastWallRecoveryMs != 0) && ((nowMs - lastWallRecoveryMs) <= WALLRECOVERY_REPEAT_WINDOW_MS))
             {
                 steerReverseDeg = lastWallRecoveryReverseSteerDeg;
+                // #DRIVEMODE: WALLRECOVERY_REUSE_L/R
+                driveMode = "WALLRECOVERY_REUSE_L/R";
             }
 
             const int steerForwardDeg = (steerReverseDeg == STEERING_MAX_DEG) ? STEERING_MIN_DEG : STEERING_MAX_DEG;
@@ -407,7 +418,9 @@ void loop()
             Serial.print("\tSpeedUs: ");
             Serial.print(speedUs);
             Serial.print("\tSteeringDeg: ");
-            Serial.println(steeringDeg);
+            Serial.print(steeringDeg);
+            Serial.print("\tDriveMode: ");
+            Serial.println(driveMode);
         }
     }
     else
